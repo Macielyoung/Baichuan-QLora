@@ -70,24 +70,64 @@
 
 ### 数据准备
 
-对于多轮问答对话，我们采用以下拼接方式。
+假设我们的问答对话有三轮，对话序列如下所示：
+
+```json
+Q1A1/Q2A2/Q3A3
+```
+
+其中Q为用户问题，A为系统回复。
+
+针对多轮数据应用形式，有以下三种。
+
+##### 问答式
+
+第一种方式当作单轮对话处理，即历史轮次对话和最后一轮问题作为输入，最后一轮回复作为输出。
 
 ```
-<s>[human1]</s>[assistant1]</s>[human2]</s>[assistant2]</s>...
+1. Q1A1Q2A2Q3->A3
+
+input: <s>[Q1]</s>[A1]</s>[Q2]</s>[A2]</s>[Q3]</s>[A3]</s>
+label: [-100][-100].........................[-100][A3]</s>
 ```
 
-其中human1和assistant1是第一轮的用户问题和系统回复，human2和assistant2是第二轮的用户问题和系统回复，以此类推。padding方式我们采用从左边开始padding，最后计算loss忽略human位置的loss。
+##### 拆分式
+
+第二种方式是将多轮问题拆分成多个单轮问答处理，即原有多轮数据被拆分三条训练样本。
 
 ```
-input: <s>[human1]</s>[assistant1]</s>[human2]</s>[assistant2]</s>
-label: <s>-100</s>[assistant1]</s>-100</s>[assistant2]</s>
+1. Q1->A1
+2. Q1A1/Q2->A2
+3. Q1A1Q2A2Q3->A3
+
+input: <s>[Q1]</s>[A1]</s>
+label: [-100].....[A1]</s>
+input: <s>[Q1]</s>[A1]</s>[Q2]</s>[A2]</s>
+label: [-100]...............[-100][A2]</s>
+input: <s>[Q1]</s>[A1]</s>[Q2]</s>[A2]</s>[Q3]</s>[A3]</s>
+label: [-100][-100].........................[-100][A3]</s>
 ```
+
+##### 多轮式
+
+第三种方式多轮问题仍然构造为一条样本，但是会忽略每个问题位置的loss，以达到平均化每轮问题的效果。
+
+```
+1. Q1->A1/Q2->A2/Q3->A3
+
+input: <s>[Q1]</s>[A1]</s>[Q2]</s>[A2]</s>[Q3]</s>[A3]</s>
+label: <s>[-100]</s>[A1]</s>[-100]</s>[A2]</s>[-100]</s>[A3]</s>
+```
+
+以上三种方式，第一种方式对于历史问答数据没有利用起来，只是作为背景信息；第二种方式相当于对前面几轮的问答做了数据增强，最终效果就是前面几轮的数据loss贡献更大；第三种方式平均化每一轮对话。
+
+本项目数据准备采用第三种方式，批内数据使用从左边开始padding的方法。
 
 
 
 ### 模型微调
 
-模型微调使用[QLora方法](https://github.com/artidoro/qlora)来撬动大模型，通过一些指令数据集来更好的理解用户指令，带动大模型给出相应的回答。
+模型微调使用[QLora方法](https://github.com/artidoro/qlora)来撬动大模型，通过一些指令数据集来更好的理解用户指令，带动大模型给出相应的回答。其中[moss-003-sft-data.jsonl](https://huggingface.co/datasets/YeungNLP/moss-003-sft-data/blob/main/moss-003-sft-data.jsonl)和[ultra-chat.jsonl](https://huggingface.co/datasets/YeungNLP/ultrachat/blob/main/ultra-chat.jsonl)两个数据集可以去huggingface下载好后加入到datasets文件夹下。
 
 ```shell
 # 处理指令数据集(受限于卡的显存，保留了1000个token的多轮对话，超过的数据只保留第一段指令)
@@ -109,7 +149,7 @@ python baichuan_eval.py(generation目录)
 
 微调好模型后，可以加载QLora和大模型进行推理，查看效果。
 
-```python
+```shell
 python qlora_eval.py(generation目录)
 ```
 

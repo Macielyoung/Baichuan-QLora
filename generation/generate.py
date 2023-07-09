@@ -29,8 +29,8 @@ else:
 
 def main(
     load_8bit: bool = False,
-    base_model: str = "baichuan-inc/baichuan-7B",
-    lora_weights: str = "../models/checkpoint-400",
+    base_model: str = "../pretrained/baichuan-7b",
+    lora_weights: str = "../models/checkpoint-2000",
     prompt_template: str = "",  # The prompt template to use, will default to alpaca.
     server_name: str = "0.0.0.0",  # Allows to listen on all interfaces by providing '0.
     share_gradio: bool = True,
@@ -68,11 +68,6 @@ def main(
         model = model.to(device)
         print("load model and tokenizer done!")
         
-    # # unwind broken decapoda-research config
-    # model.config.pad_token_id = tokenizer.pad_token_id = 0  # unk
-    # model.config.bos_token_id = 1
-    # model.config.eos_token_id = 2
-
     # if not load_8bit:
     #     model.half()  # seems to fix bugs for some users.
 
@@ -91,6 +86,7 @@ def main(
         stream_output=False,
         **kwargs,
     ):
+        print("repetition_penalty: ", repetition_penalty)
         prompt = "{}{}{}".format(tokenizer.bos_token, input, tokenizer.eos_token)
         inputs = tokenizer(prompt, return_tensors="pt")
         input_ids = inputs["input_ids"].to(device)
@@ -137,25 +133,33 @@ def main(
                     # new_tokens = len(output) - len(input_ids[0])
                     decoded_output = tokenizer.decode(output)
 
-                    if output[-1] in [tokenizer.eos_token_id]:
+                    if output[-1] in [tokenizer.eos_token]:
                         break
 
-                    response = decoded_output.split("系统: ")[-1]
+                    response = decoded_output[len(prompt): ]
                     yield response
             return  # early return for stream_output
 
         # Without streaming
         with torch.no_grad():
-            generation_output = model.generate(
-                input_ids=input_ids,
-                generation_config=generation_config,
-                return_dict_in_generate=True,
-                output_scores=True,
-                max_new_tokens=max_new_tokens,
-            )
-        s = generation_output.sequences[0]
-        output = tokenizer.decode(s)
-        response = output.strip().replace(prompt, "")
+            # generation_output = model.generate(
+            #     input_ids=input_ids,
+            #     generation_config=generation_config,
+            #     return_dict_in_generate=True,
+            #     output_scores=True,
+            #     max_new_tokens=max_new_tokens,
+            # )
+            outputs = model.generate(input_ids=input_ids,
+                             max_new_tokens=max_new_tokens,
+                             do_sample=True, 
+                             top_p=top_p,
+                             temperature=temperature,
+                             repetition_penalty=repetition_penalty, 
+                             eos_token_id=tokenizer.eos_token_id)
+        outputs = outputs[:, input_ids.shape[-1]: ]
+        results = tokenizer.batch_decode(outputs)
+        # print("output tokens: {}".format(outputs))
+        response = results[0].strip()
         yield response
 
     gr.Interface(

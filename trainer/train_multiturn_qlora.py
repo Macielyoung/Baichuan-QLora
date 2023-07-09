@@ -1,8 +1,3 @@
-'''
-Author: Macielyoung
-Date: 2023-06-17 15:33:54
-Description: 模型QLora微调
-'''
 import os
 import sys
 from typing import List
@@ -26,7 +21,7 @@ import bitsandbytes as bnb
 from torch.nn.utils.rnn import pad_sequence
 import argparse
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
 
 
 class QLoraTrainer(Trainer):
@@ -64,8 +59,8 @@ def train(
     # training hyperparams
     batch_size: int = 128,
     micro_batch_size: int = 2,
-    num_epochs: int = 3,
-    learning_rate: float = 1e-5,
+    num_epochs: int = 1,
+    learning_rate: float = 2e-5,
     cutoff_len: int = 1024,
     val_set_size: int = 0,
     # lora hyperparams
@@ -73,16 +68,10 @@ def train(
     lora_alpha: int = 16,
     lora_dropout: float = 0.05,
     lora_target_modules: List[str] = [
-        "query_key_value"
+        "W_pack"
     ],
     # llm hyperparams
-    train_on_inputs: bool = False,  # if False, masks out inputs in loss
     group_by_length: bool = False,  # faster, but produces an odd training loss curve
-    # wandb params
-    wandb_project: str = "",
-    wandb_run_name: str = "",
-    wandb_watch: str = "",  # options: false | gradients | all
-    wandb_log_model: str = "",  # options: false | true
     resume_from_checkpoint: str = None,  # either training checkpoint or final adapter
 ):
     logger.info(
@@ -100,38 +89,22 @@ def train(
         f"lora_alpha: {lora_alpha}\n"
         f"lora_dropout: {lora_dropout}\n"
         f"lora_target_modules: {lora_target_modules}\n"
-        f"train_on_inputs: {train_on_inputs}\n"
         f"group_by_length: {group_by_length}\n"
-        f"wandb_project: {wandb_project}\n"
-        f"wandb_run_name: {wandb_run_name}\n"
-        f"wandb_watch: {wandb_watch}\n"
-        f"wandb_log_model: {wandb_log_model}\n"
         f"resume_from_checkpoint: {resume_from_checkpoint}\n"
     )
     assert (
         base_model
-    ), "Please specify a --base_model, e.g. --base_model='baichuan-inc/baichuan-7B'"
+    ), "Please specify a --base_model, e.g. --base_model='bigscience/bloomz-7b1-mt'"
     gradient_accumulation_steps = batch_size // micro_batch_size
 
     device_map = "auto"
+    # device_map = {"": 0}
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     ddp = world_size != 1
     if ddp:
         device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)}
         gradient_accumulation_steps = gradient_accumulation_steps // world_size
 
-    # Check if parameter passed or if set within environ
-    use_wandb = len(wandb_project) > 0 or (
-        "WANDB_PROJECT" in os.environ and len(os.environ["WANDB_PROJECT"]) > 0
-    )
-    # Only overwrite environ if wandb param passed
-    if len(wandb_project) > 0:
-        os.environ["WANDB_PROJECT"] = wandb_project
-    if len(wandb_watch) > 0:
-        os.environ["WANDB_WATCH"] = wandb_watch
-    if len(wandb_log_model) > 0:
-        os.environ["WANDB_LOG_MODEL"] = wandb_log_model
-        
     # load model in 4bit
     quantization_config=BitsAndBytesConfig(
         load_in_4bit=True,
@@ -300,8 +273,9 @@ def train(
         load_best_model_at_end=True if val_set_size > 0 else False,
         ddp_find_unused_parameters=False if ddp else None,
         group_by_length=group_by_length,
-        report_to="wandb" if use_wandb else None,
-        run_name=wandb_run_name if use_wandb else None,
+        report_to="tensorboard"
+        # report_to="wandb" if use_wandb else None,
+        # run_name=wandb_run_name if use_wandb else None,
     )
 
     trainer = QLoraTrainer(

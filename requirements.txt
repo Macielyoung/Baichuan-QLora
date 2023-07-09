@@ -11,3 +11,4 @@ scipy==1.10.1
 accelerate==0.20.0.dev0
 deepspeed==0.9.2
 fire==0.5.0
+tensorboard
