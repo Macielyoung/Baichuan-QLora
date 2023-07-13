@@ -134,7 +134,7 @@ label: <s>[-100]</s>[A1]</s>[-100]</s>[A2]</s>[-100]</s>[A3]</s>
 python preprocess.py(processor目录)
 
 # 模型微调
-deepspeed --include=localhost:0,1 train_multi_qlora.py --deepspeed --deepspeed_config deepspeed.json(trainer目录)
+deepspeed --include=localhost:0,1 train_multiturn_qlora.py --deepspeed --deepspeed_config deepspeed.json(trainer目录)
 ```
 
 
